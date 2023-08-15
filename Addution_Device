@@ -48,7 +48,7 @@ const int Linear_Actuator_Status_Pin = 12;
 //------Linear Actuator ---------
 const int stepsPerRevolution = 1000;
 const double linearSpeed = 50;
-
+const int read_units = 5;
 //-------Numpad-------
 const byte ROWS = 4; // Set the number of Rows
 const byte COLS = 4; // Set the number of Columns
@@ -104,13 +104,13 @@ String temp_number = "";
 bool clear_val = false;  //false to continue in keypad loop 
 
 //--Weight Scale Calibration Value-----
-const float weight_scale = 1436965.f  ;//Values from trial and error testing
+const float weight_scale = 143695.f  ;//Values from trial and error testing
 
 //--Update Display -----
 bool update_display = true; // True to tell Arduino to update display on first run
 bool set_mode = true; ///Set mode is to change its state from calibration idle
 bool display_num = false;
-int delaysec = 500;
+int delaysec = 100;
 
 
 //Setup
@@ -128,6 +128,7 @@ void setup() {
   //------- LCD init ---------
   lcd.init(); 
   lcd.backlight();
+
 
   //-----Button------------------
   pinMode(Start_Button, INPUT);
@@ -155,18 +156,25 @@ void setup() {
   digitalWrite(QuickSilver_Rotate_Start, LOW);
   pinMode(QuickSilver_Rotate_Dir, OUTPUT); //Send command to change direction of QS.
   digitalWrite(QuickSilver_Rotate_Dir, LOW);
-
-    //-----Arduino Status to Quicksilver --------
-  pinMode(Arduino_Status_Pin, OUTPUT);
-  digitalWrite(Arduino_Status_Pin, LOW);
+  
   delay(1000);
+
+
+
 
   //--QuickSilver Status to Arduino-----
 
+  
+
+
   pinMode(QuickSilver_Status_Pin, INPUT); //read command from motor if moving, 0 means complete, 1 means incomplete
   digitalWrite(QuickSilver_Status_Pin, HIGH);
+//  
+  //-----Arduino Status to Quicksilver --------
+  pinMode(Arduino_Status_Pin, OUTPUT);
+  digitalWrite(Arduino_Status_Pin, LOW);
 
-  while (digitalRead(QuickSilver_Status_Pin)==HIGH)
+while (digitalRead(QuickSilver_Status_Pin)==HIGH)
   {
     if (update_display == true)
     {
@@ -174,6 +182,11 @@ void setup() {
       update_display = false;
     }
   }
+
+  delay(1000);
+
+
+  
   update_display = true;
 //  DisplayLCD("Calibrating"); 
 
@@ -224,7 +237,7 @@ void loop() {
 
 void StateMachine() 
 {
-  Serial.println(state);
+//  Serial.println(state);
   if (digitalRead(E_Stop)==LOW)
   {
     state = Emergency_Stop;
@@ -233,7 +246,7 @@ void StateMachine()
   switch (state)
   {
     case Calibration_Restart:
-      while (digitalRead(E_Stop) == HIGH)
+      if (digitalRead(E_Stop) == HIGH)
       { 
         DisplayLCD("Current State is: ", "Calibration_Restart");
 //        Serial.println("CALIBRATION_RESTART");
@@ -242,7 +255,7 @@ void StateMachine()
 
         while (digitalRead(Linear_Actuator_Status_Pin) == LOW)//While there is no error 
         {
-//          Serial.println("ERROR HERE 01");
+          Serial.println("ERROR HERE 01");
           if (digitalRead(E_Stop) == LOW)
           {
             state = Emergency_Stop;
@@ -257,16 +270,15 @@ void StateMachine()
         update_display = true;
         Restart_Linear_Actuator_Status();
 
-        pinMode(Arduino_Status_Pin, INPUT); //Sets up for use in the counting of QS and angle
-        digitalWrite(Arduino_Status_Pin, HIGH);
+        
 
         //--- QuickSilver Home----
         digitalWrite(QuickSilver_Rotate_Dir, QS_CW);
         digitalWrite(QuickSilver_Rotate_Start, HIGH); //HIGH to Start Rotating, Low to Stop
-        delay(500);
+//        delay(500);
         while (digitalRead(QuickSilver_Status_Pin) == HIGH) //  QuickSilver Status is always HIGH when moving
         {
-//          Serial.println("ERROR HERE 02");
+          Serial.println("ERROR HERE 02");
 
           if (digitalRead(E_Stop)==LOW)
             {
@@ -280,14 +292,24 @@ void StateMachine()
             update_display = false;
           }
         }
-        update_display = true;                
+
+
+
+
+        delay(100);
         digitalWrite(QuickSilver_Rotate_Start, LOW);
+
+        
+        pinMode(Arduino_Status_Pin, INPUT); //Sets up for use in the counting of QS and angle
+        digitalWrite(Arduino_Status_Pin, HIGH);
+        
+        update_display = true;                
        
        //-------Force Sensor Initialise---------
         WeightScale_scale.begin(Loadcell_Dout_Pin, Loadcell_Sck_Pin);
         WeightScale_scale.set_scale(weight_scale);
         WeightScale_scale.tare();    // reset the scale to 0
-        force = WeightScale_scale.get_units(5);
+        force = WeightScale_scale.get_units(read_units);
         Write_LCD_Line("Forece Sensor Tared", 0);
 
         set_mode = true; //Used in calibration idle
@@ -304,14 +326,13 @@ void StateMachine()
     case Calibration_Idle:
       while (digitalRead(E_Stop) == HIGH)
       {
-        Serial.println("ERROR 3");
         if (update_display == true)
         {
           DisplayLCD("A - Pull", "B - Release", "C - Set Force Value", "D - Recalibrate");
           update_display = false;
         }
 
-        force = WeightScale_scale.get_units(5);
+        force = WeightScale_scale.get_units(read_units);
         Overwrite_LCD(force,0,14);
 
         if (set_mode == true)
@@ -323,7 +344,6 @@ void StateMachine()
             update_display = true;
             incremental_count = incremental_count + 0.5;
             Restart_Linear_Actuator_Status();
-            Serial.println("4");
             state = Calibrating_Pull;
             set_mode = false;
             break;
@@ -356,7 +376,6 @@ void StateMachine()
       break;
 
     case Calibrating_Pull:
-      Serial.println("ERRROR 5");
       if (update_display == true)
         {
           DisplayLCD("Calibrating Pull", "Current Force:");
@@ -365,7 +384,7 @@ void StateMachine()
         }
       digitalWrite(dirPin, LA_PULL);
 
-      force = WeightScale_scale.get_units(5);
+      force = WeightScale_scale.get_units(read_units);
       Overwrite_LCD(force, 2, 0);
       if (force >= (incremental_count))
       {
@@ -419,7 +438,7 @@ void StateMachine()
         }
       digitalWrite(dirPin, LA_RELEASE);
 
-      force = WeightScale_scale.get_units(5);
+      force = WeightScale_scale.get_units(read_units);
       Overwrite_LCD(force, 2, 0);
 
       if (force >(incremental_count+0.20))
@@ -576,7 +595,7 @@ void StateMachine()
             state = Calibration_Restart;
             break;
           }
-          force = WeightScale_scale.get_units(5);
+          force = WeightScale_scale.get_units(read_units);
 
           //for logging
           Serial.print(force);
@@ -596,8 +615,8 @@ void StateMachine()
             update_display = false;
           }
        
-          force = WeightScale_scale.get_units(5);
-          if (force>(pulling_limit-0.2) and (force<(pulling_limit+0.2)))
+          force = WeightScale_scale.get_units(read_units);
+          if (force>=(pulling_limit-0.05) and (force<=(pulling_limit+0.05)))
           {
             Input = force;
             Setpoint = pulling_limit;
@@ -614,14 +633,24 @@ void StateMachine()
             Serial.println(angle);
           }
   
-          else
-          {myStepper.step(100);
+          else if (force<(pulling_limit - 0.05))
+          {digitalWrite(dirPin, LA_PULL);
+           myStepper.step(100);
            Serial.print(force);
            Serial.print(",");
            Serial.print(100);
            Serial.print(",");
            Serial.println(angle);}
            
+          else if (force>(pulling_limit + 0.05))
+          {digitalWrite(dirPin, LA_RELEASE);
+           myStepper.step(100);
+           Serial.print(force);
+           Serial.print(",");
+           Serial.print(-100);
+           Serial.print(",");
+           Serial.println(angle);
+          }
           
           Overwrite_LCD(force, 3, 0); // second argument is row, third argument is column
   
@@ -638,8 +667,13 @@ void StateMachine()
     case Pulling_Complete:
       while (digitalRead(E_Stop)==HIGH)
       {
+      if (update_display == true)
+      {
       DisplayLCD("Current State is: ", "PULLING COMPLETE", "Current Force is: ");
-      force = WeightScale_scale.get_units(5);
+      update_display = false;
+      }
+      
+      force = WeightScale_scale.get_units(read_units);
       Overwrite_LCD(force, 3, 0);
       Serial.print(force);
       Serial.print(",");
@@ -647,88 +681,27 @@ void StateMachine()
       digitalWrite(QuickSilver_Rotate_Dir, QS_CCW);
       digitalWrite(QuickSilver_Rotate_Start, HIGH);
       state = Rotation;
+      update_display = true;
       break;
       }
       break;
 
 
-//
-    case Rotation_Complete:
-      DisplayLCD("Current State is: ", "ROTATION_COMPLETE", "Current Force is: ");
-      force = WeightScale_scale.get_units(5);
-      Overwrite_LCD(force, 3, 0);
-      digitalWrite(dirPin, LA_RELEASE);
-      state = Releasing;
-      break;
-//      
-    case Releasing:
-      while (digitalRead(E_Stop)==HIGH)
-      {
-        if (update_display == true)
-        {
-          DisplayLCD("Current State is: ", "Releasing", "Current Force is: ");
-          update_display = false;
-        }
-     
-        force = WeightScale_scale.get_units(5);
-        delay(delaysec);
-        Overwrite_LCD(force, 3, 0); // second argument is row, third argument is column
-        myStepper.step(stepsPerRevolution);
-
-        if (digitalRead(Linear_Actuator_Status_Pin) == HIGH)
-          {
-            update_display = true;
-            state = Releasing_Complete;
-            break;
-          } 
-    }
-       break; 
-  case Releasing_Complete:
-      while (digitalRead(E_Stop)==HIGH)
-      {
-        DisplayLCD("Current State is: ", "RELEASE COMPLETE", "Current Force is: ");
-        force = WeightScale_scale.get_units(5);
-        delay(delaysec);
-        Overwrite_LCD(force, 3, 0);
-        digitalWrite(QuickSilver_Rotate_Dir, QS_CW);
-        digitalWrite(QuickSilver_Rotate_Start, HIGH);
-        state = Rotation_Back;
-        break;
-      }
-      break;
-  case Rotation_Back:
       
-        DisplayLCD("Current State is: ", "ROTATION_BACK", "Current Force is: ");
-        while (digitalRead(QuickSilver_Status_Pin) == HIGH) //while it is still rotating it is HIGH
-        {
-          if (digitalRead(E_Stop)==LOW)
-          {
-            state = Emergency_Stop;
-            break;
-          }
-        force = WeightScale_scale.get_units(5);
-        delay(delaysec);
-        Overwrite_LCD(force, 3, 0);
-        }
-      state = Cycle_Complete;
-      break;
-//      
-  case Cycle_Complete:
-      while (digitalRead(E_Stop)==HIGH)
-      {
-        DisplayLCD("Current State is: ", "CYCLE COMPLETED", "Current Force is: ");
-        force = WeightScale_scale.get_units(5);
-        Overwrite_LCD(force, 3, 0);
-        digitalWrite(QuickSilver_Rotate_Start, LOW);
-        state = Wait_for_Signal;
-        break;
+    case Rotation:
+      if (update_display == true)
+      {DisplayLCD("Current State is: ", "ROTATION", "Current Force is: ");
+       update_display = false;
       }
-      break;
-case Rotation:
-      DisplayLCD("Current State is: ", "ROTATION", "Current Force is: ");
+      
+      
+//      Serial.println("Setpoint is: ");
+//      Serial.println(pulling_limit);
+      
       if (digitalRead(E_Stop) == LOW)
       {
         state = Emergency_Stop;
+        update_display = true;
         break;
       }
       
@@ -741,16 +714,18 @@ case Rotation:
       if (digitalRead(QuickSilver_Status_Pin) == LOW)
       {
         state = Rotation_Complete;
+        update_display = true;
         digitalWrite(QuickSilver_Rotate_Start, LOW);
         break;
       }
       
-      force = WeightScale_scale.get_units(5)  ;
-      
+      force = WeightScale_scale.get_units(read_units)  ;
 
-      if (force>(pulling_limit-1.0) and (force<(pulling_limit+0.06)))
+ 
+
+      if (force>(pulling_limit-1.0) and (force<(pulling_limit+0.08)))
       {
-      Kp = 20;
+      Kp = 30;
       Input = force;
       Setpoint = pulling_limit;
       myPID.SetTunings(Kp,Ki,Kd);
@@ -765,12 +740,14 @@ case Rotation:
       Serial.print(Output);
       Serial.print(",");
       Serial.print(angle);
+      Serial.print(",");    
+      Serial.print(Kp);
       Serial.print(",");
-      Serial.println(Kp);
+      Serial.println(Setpoint);
       }
-      else if ((force>=(pulling_limit+0.06))and (force<(pulling_limit+0.2)) and (angle>=20))
+      else if ((force>=(pulling_limit+0.08))and (force<(pulling_limit+0.2)) and (angle>20) and (angle<=85))
       {
-      Kp = 1200;
+      Kp = 500;
       Setpoint = pulling_limit;
       Input = force;
       myPID.SetTunings(Kp,Ki,Kd);
@@ -786,12 +763,14 @@ case Rotation:
       Serial.print(",");
       Serial.print(angle);
       Serial.print(",");
-      Serial.println(Kp);
+      Serial.print(Kp);
+      Serial.print(",");
+      Serial.println(Setpoint);
       }
 
-      else if ((force>=(pulling_limit+0.2)) and (angle>=20))
+      else if ((force>=(pulling_limit+0.2)))
        {
-        Kp = 600;
+        Kp = 300;
         myPID.SetTunings(Kp,Ki,Kd);
         Input = force;
         Setpoint = pulling_limit;
@@ -807,11 +786,33 @@ case Rotation:
         Serial.print(",");
         Serial.print(angle);
         Serial.print(",");
-        Serial.println(Kp);
+        Serial.print(Kp);
+        Serial.print(",");
+        Serial.println(Setpoint);
        }
+      else if (force<(pulling_limit+1.0))
+      {
+        digitalWrite(dirPin, LA_PULL);
+        myStepper.step(50);
+        Serial.print(force);
+        Serial.print(",");
+        Serial.print(50);
+        Serial.print(",");
+        Serial.print(angle);
+        Serial.print(",");
+        Serial.print(0);
+        Serial.print(",");
+        Serial.println(Setpoint);
+      }
+
+
+       
       delay(delaysec);
+
+      
       
       Overwrite_LCD(force, 3, 0);
+      Overwrite_LCD(pulling_limit, 3, 13);
       if (rotation_set_force == true)
       {
         char key = keypad.getKey();
@@ -836,23 +837,104 @@ case Rotation:
  
       
     case Emergency_Stop:
-      Serial.println("PRESSED");
-//      if (update_display == true)
-//      {
+      if (update_display == true)
+      {
         DisplayLCD("EMERGENCY STOP PRESSED!");
-//        update_display = false;
-//      }
-//      else
-//      {Serial.println("FALSe");}
+        update_display = false;
+        
+      }
+//    
       if (digitalRead(E_Stop) == HIGH)
       { state = Recovery;
         update_display = true;
       }
       
       break;
+
+
+
+//
+    case Rotation_Complete:
+      DisplayLCD("Current State is: ", "ROTATION_COMPLETE", "Current Force is: ");
+      force = WeightScale_scale.get_units(read_units);
+      Overwrite_LCD(force, 3, 0);
+      digitalWrite(dirPin, LA_RELEASE);
+      state = Releasing;
+      break;
+//      
+    case Releasing:
+      while (digitalRead(E_Stop)==HIGH)
+      {
+        if (update_display == true)
+        {
+          DisplayLCD("Current State is: ", "Releasing", "Current Force is: ");
+          update_display = false;
+        }
+     
+        force = WeightScale_scale.get_units(read_units);
+        delay(delaysec);
+        Overwrite_LCD(force, 3, 0); // second argument is row, third argument is column
+        myStepper.step(stepsPerRevolution);
+
+        if (digitalRead(Linear_Actuator_Status_Pin) == HIGH)
+          {
+            update_display = true;
+            state = Releasing_Complete;
+            break;
+          } 
+    }
+       break; 
+  case Releasing_Complete:
+      while (digitalRead(E_Stop)==HIGH)
+      {
+        DisplayLCD("Current State is: ", "RELEASE COMPLETE", "Current Force is: ");
+        force = WeightScale_scale.get_units(read_units);
+        delay(delaysec);
+        Overwrite_LCD(force, 3, 0);
+        digitalWrite(QuickSilver_Rotate_Dir, QS_CW);
+        digitalWrite(QuickSilver_Rotate_Start, HIGH);
+        state = Rotation_Back;
+        break;
+      }
+      break;
+  case Rotation_Back:
+      
+        DisplayLCD("Current State is: ", "ROTATION_BACK", "Current Force is: ");
+        while (digitalRead(QuickSilver_Status_Pin) == HIGH) //while it is still rotating it is HIGH
+        {
+          if (digitalRead(E_Stop)==LOW)
+          {
+            state = Emergency_Stop;
+            break;
+          }
+        force = WeightScale_scale.get_units(read_units);
+        delay(delaysec);
+        Overwrite_LCD(force, 3, 0);
+        }
+      state = Cycle_Complete;
+      break;
+//      
+  case Cycle_Complete:
+      while (digitalRead(E_Stop)==HIGH)
+      {
+        DisplayLCD("Current State is: ", "CYCLE COMPLETED", "Current Force is: ");
+        force = WeightScale_scale.get_units(read_units);
+        Overwrite_LCD(force, 3, 0);
+        digitalWrite(QuickSilver_Rotate_Start, LOW);
+        state = Wait_for_Signal;
+        break;
+      }
+      break;
+      
+
       
     case Recovery:
-      DisplayLCD("E-STOP RELEASED!");
+      if (update_display == true)
+      {
+        DisplayLCD("E-STOP RELEASED!");
+        update_display = false;
+      }
+      
       while (digitalRead(QuickSilver_Status_Pin)==HIGH)
       {
           pinMode(Arduino_Status_Pin, OUTPUT);
@@ -866,7 +948,7 @@ case Rotation:
 
   }
 
-  Serial.println("END OF LINE");
+
 }
 
 
